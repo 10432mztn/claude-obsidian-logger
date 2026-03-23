@@ -52,11 +52,12 @@ assert_matches() {
 
 run_logger() {
   local json="$1"
+  printf '%s' "$json" | \
   OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/vault" \
   LOG_DIR="Claude Code" \
   CLAUDE_PROJECT_DIR="/Users/test/dev/my-project" \
   HOME="$TMPDIR_TEST" \
-    printf '%s' "$json" | bash "$LOGGER" 2>/dev/null
+    bash "$LOGGER" 2>/dev/null
 }
 
 today="$(date +%Y-%m-%d)"
@@ -103,8 +104,9 @@ assert_not_contains "$log_file" "$(python3 -c "print('a' * 150)")" "Bash: 150文
 
 # --- Test: 不正 JSON は exit 0 ---
 result=0
-OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/vault" LOG_DIR="Claude Code" HOME="$TMPDIR_TEST" \
-  printf 'not json' | bash "$LOGGER" 2>/dev/null || result=$?
+printf 'not json' | \
+  OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/vault" LOG_DIR="Claude Code" HOME="$TMPDIR_TEST" \
+  bash "$LOGGER" 2>/dev/null || result=$?
 if [ "$result" -eq 0 ]; then
   echo "PASS: 不正 JSON でも exit 0"; PASS=$((PASS + 1))
 else
@@ -113,9 +115,10 @@ fi
 
 # --- Test: vault 不在は exit 0 ---
 result=0
-OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/nonexistent-vault" LOG_DIR="Claude Code" HOME="$TMPDIR_TEST" \
-CLAUDE_PROJECT_DIR="/Users/test/dev/my-project" \
-  printf '{"tool_name":"Edit","tool_input":{"file_path":"/f.ts"}}' | bash "$LOGGER" 2>/dev/null || result=$?
+printf '{"tool_name":"Edit","tool_input":{"file_path":"/f.ts"}}' | \
+  OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/nonexistent-vault" LOG_DIR="Claude Code" HOME="$TMPDIR_TEST" \
+  CLAUDE_PROJECT_DIR="/Users/test/dev/my-project" \
+  bash "$LOGGER" 2>/dev/null || result=$?
 if [ "$result" -eq 0 ]; then
   echo "PASS: vault 不在でも exit 0"; PASS=$((PASS + 1))
 else
@@ -127,10 +130,10 @@ non_git_dir="$TMPDIR_TEST/non-git-project"
 mkdir -p "$non_git_dir"
 non_git_log="$TMPDIR_TEST/vault/Claude Code/$today.md"
 
-OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/vault" LOG_DIR="Claude Code" \
-CLAUDE_PROJECT_DIR="$non_git_dir" HOME="$TMPDIR_TEST" \
-  printf '{"tool_name":"Write","tool_input":{"file_path":"'"$non_git_dir"'/foo.ts"}}' \
-  | bash "$LOGGER" 2>/dev/null
+printf '{"tool_name":"Write","tool_input":{"file_path":"'"$non_git_dir"'/foo.ts"}}' \
+  | OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/vault" LOG_DIR="Claude Code" \
+    CLAUDE_PROJECT_DIR="$non_git_dir" HOME="$TMPDIR_TEST" \
+    bash "$LOGGER" 2>/dev/null
 
 assert_contains "$non_git_log" "Write: foo.ts" "git 外: ファイルは記録される"
 assert_not_contains "$non_git_log" "#branch/" "git 外: ブランチタグは記録されない"
@@ -141,9 +144,9 @@ mkdir -p "$no_config_home"
 default_vault="$no_config_home/Documents/Obsidian Vault"
 mkdir -p "$default_vault"
 
-HOME="$no_config_home" CLAUDE_PROJECT_DIR="/Users/test/dev/my-project" \
-  printf '{"tool_name":"Write","tool_input":{"file_path":"/Users/test/dev/my-project/f.ts"}}' \
-  | bash "$LOGGER" 2>/dev/null
+printf '{"tool_name":"Write","tool_input":{"file_path":"/Users/test/dev/my-project/f.ts"}}' \
+  | HOME="$no_config_home" CLAUDE_PROJECT_DIR="/Users/test/dev/my-project" \
+    bash "$LOGGER" 2>/dev/null
 
 no_config_log="$default_vault/Claude Code/$today.md"
 if [ -f "$no_config_log" ]; then

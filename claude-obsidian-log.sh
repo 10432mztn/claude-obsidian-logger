@@ -53,4 +53,48 @@ if [ ! -f "$log_file" ]; then
   printf '# %s\n\n' "$today" > "$log_file"
 fi
 
+# --- ツール別の対象情報を抽出 ---
+project_dir="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+case "$tool_name" in
+  Edit|Write|MultiEdit)
+    raw_path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty' 2>/dev/null)" || { exit 0; }
+    # CLAUDE_PROJECT_DIR からの相対パスを計算（外にある場合は basename）
+    if [[ "$raw_path" == "$project_dir/"* ]]; then
+      target="${raw_path#"$project_dir/"}"
+    else
+      target="$(basename "$raw_path")"
+    fi
+    ;;
+  Bash)
+    raw_cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null)" || { exit 0; }
+    if [ "${#raw_cmd}" -gt 120 ]; then
+      target="${raw_cmd:0:120}..."
+    else
+      target="$raw_cmd"
+    fi
+    ;;
+esac
+
+# --- タグ取得 ---
+project_tag="#$(basename "$project_dir")"
+
+branch_tag=""
+if git -C "$project_dir" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
+  branch="$(git -C "$project_dir" branch --show-current 2>/dev/null)"
+  if [ -n "$branch" ]; then
+    branch_tag="#branch/$branch"
+  fi
+fi
+
+# --- ログ行を追記 ---
+{
+  printf '### %s - %s: %s\n' "$time_now" "$tool_name" "$target"
+  echo "- プロジェクト: $project_tag"
+  if [ -n "$branch_tag" ]; then
+    echo "- ブランチ: $branch_tag"
+  fi
+  echo ""
+} >> "$log_file"
+
 exit 0
