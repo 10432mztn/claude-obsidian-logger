@@ -13,40 +13,40 @@ PASS=0; FAIL=0
 
 assert_contains() {
   local file="$1" pattern="$2" desc="$3"
-  if grep -qF "$pattern" "$file"; then
+  if grep -qF "$pattern" "$file" 2>/dev/null; then
     echo "PASS: $desc"
-    ((PASS++))
+    PASS=$((PASS + 1))
   else
     echo "FAIL: $desc"
     echo "  Expected to find: $pattern"
     echo "  In file: $file"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
 assert_not_contains() {
   local file="$1" pattern="$2" desc="$3"
-  if ! grep -qF "$pattern" "$file"; then
+  if ! grep -qF "$pattern" "$file" 2>/dev/null; then
     echo "PASS: $desc"
-    ((PASS++))
+    PASS=$((PASS + 1))
   else
     echo "FAIL: $desc"
     echo "  Expected NOT to find: $pattern"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
 assert_matches() {
   # grep -E でパターンマッチ
   local file="$1" pattern="$2" desc="$3"
-  if grep -qE "$pattern" "$file"; then
+  if grep -qE "$pattern" "$file" 2>/dev/null; then
     echo "PASS: $desc"
-    ((PASS++))
+    PASS=$((PASS + 1))
   else
     echo "FAIL: $desc"
     echo "  Expected regex match: $pattern"
     echo "  In file: $file"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
   fi
 }
 
@@ -106,9 +106,9 @@ result=0
 OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/vault" LOG_DIR="Claude Code" HOME="$TMPDIR_TEST" \
   printf 'not json' | bash "$LOGGER" 2>/dev/null || result=$?
 if [ "$result" -eq 0 ]; then
-  echo "PASS: 不正 JSON でも exit 0"; ((PASS++))
+  echo "PASS: 不正 JSON でも exit 0"; PASS=$((PASS + 1))
 else
-  echo "FAIL: 不正 JSON で非ゼロ終了 ($result)"; ((FAIL++))
+  echo "FAIL: 不正 JSON で非ゼロ終了 ($result)"; FAIL=$((FAIL + 1))
 fi
 
 # --- Test: vault 不在は exit 0 ---
@@ -117,9 +117,9 @@ OBSIDIAN_VAULT_PATH="$TMPDIR_TEST/nonexistent-vault" LOG_DIR="Claude Code" HOME=
 CLAUDE_PROJECT_DIR="/Users/test/dev/my-project" \
   printf '{"tool_name":"Edit","tool_input":{"file_path":"/f.ts"}}' | bash "$LOGGER" 2>/dev/null || result=$?
 if [ "$result" -eq 0 ]; then
-  echo "PASS: vault 不在でも exit 0"; ((PASS++))
+  echo "PASS: vault 不在でも exit 0"; PASS=$((PASS + 1))
 else
-  echo "FAIL: vault 不在で非ゼロ終了 ($result)"; ((FAIL++))
+  echo "FAIL: vault 不在で非ゼロ終了 ($result)"; FAIL=$((FAIL + 1))
 fi
 
 # --- Test: git リポジトリ外はブランチタグ省略 ---
@@ -147,9 +147,9 @@ HOME="$no_config_home" CLAUDE_PROJECT_DIR="/Users/test/dev/my-project" \
 
 no_config_log="$default_vault/Claude Code/$today.md"
 if [ -f "$no_config_log" ]; then
-  echo "PASS: config 不在: デフォルト vault にログが書き込まれる"; ((PASS++))
+  echo "PASS: config 不在: デフォルト vault にログが書き込まれる"; PASS=$((PASS + 1))
 else
-  echo "FAIL: config 不在: ログが書き込まれなかった ($no_config_log)"; ((FAIL++))
+  echo "FAIL: config 不在: ログが書き込まれなかった ($no_config_log)"; FAIL=$((FAIL + 1))
 fi
 
 echo ""
