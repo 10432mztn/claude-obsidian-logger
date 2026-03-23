@@ -19,4 +19,19 @@ if [ -f "$CONFIG_FILE" ]; then
   source "$CONFIG_FILE"
 fi
 
+# --- stdin から JSON を読み取り ---
+payload="$(cat)"
+
+tool_name="$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null)" || { exit 0; }
+if [ -z "$tool_name" ]; then
+  echo "[claude-obsidian-logger] tool_name not found in payload." >&2
+  exit 0
+fi
+
+# 対象ツール以外はスキップ
+case "$tool_name" in
+  Edit|Write|MultiEdit|Bash) ;;
+  *) exit 0 ;;
+esac
+
 exit 0
