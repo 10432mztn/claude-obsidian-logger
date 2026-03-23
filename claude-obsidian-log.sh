@@ -34,4 +34,23 @@ case "$tool_name" in
   *) exit 0 ;;
 esac
 
+# --- 出力先パス ---
+today="$(date +%Y-%m-%d)"
+time_now="$(date +%H:%M)"
+log_dir_path="$OBSIDIAN_VAULT_PATH/$LOG_DIR"
+log_file="$log_dir_path/$today.md"
+
+# vault ディレクトリ存在確認
+if [ ! -d "$OBSIDIAN_VAULT_PATH" ]; then
+  echo "[claude-obsidian-logger] Vault not found: $OBSIDIAN_VAULT_PATH" >&2
+  exit 0
+fi
+
+mkdir -p "$log_dir_path"
+
+# ファイルが存在しなければヘッダ作成
+if [ ! -f "$log_file" ]; then
+  printf '# %s\n\n' "$today" > "$log_file"
+fi
+
 exit 0
