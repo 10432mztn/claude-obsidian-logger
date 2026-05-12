@@ -14,7 +14,6 @@ declare -a HOOKS=(
   "claude-obsidian-log.sh:PostToolUse:$POST_TOOL_MATCHER"
   "claude-obsidian-prompt.sh:UserPromptSubmit:"
   "claude-obsidian-session-summary.sh:Stop:"
-  "claude-obsidian-daily-rollup.sh:Stop:"
 )
 
 # --- アンインストール ---
@@ -141,7 +140,8 @@ done
 echo ""
 echo "Done! claude-obsidian-logger is installed."
 echo "  Config: $CONFIG_FILE"
-echo "  Hooks registered: PostToolUse / UserPromptSubmit / Stop x2"
+echo "  Hooks registered: PostToolUse / UserPromptSubmit / Stop"
 echo ""
-echo "Note: Session summaries and daily rollups use the \`claude\` CLI."
-echo "      Ensure you are logged in (\`claude\` once interactively) for them to work."
+echo "Daily rollup (📋 今日の総括 / 🎯 明日やること) is NOT generated automatically."
+echo "Run the slash command \`/daily-rollup\` from an interactive Claude Code session"
+echo "to generate or update the rollup for today (or pass a YYYY-MM-DD date)."
