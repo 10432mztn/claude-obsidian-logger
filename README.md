@@ -6,7 +6,7 @@ Claude Code の [hook 機能](https://docs.anthropic.com/en/docs/claude-code/hoo
 
 - **ナラティブ重視** — ユーザー発言・ツール操作・セッションサマリ・デイリー総括を1枚のデイリーノートに集約
 - **トークン消費ゼロ（PostToolUse / UserPromptSubmit）** — hook はモデル外で実行
-- **AI による要約**（Stop hook、claude CLI 経由）— 各セッション末に「やったこと / 次のステップ」、1日終わりに「今日の総括 / 明日やること」を自動生成
+- **AI による要約**（Stop hook、claude CLI 経由）— 各セッション末に「やったこと / 次のステップ」、1日終わりに「今日の総括 / 明日やること」を自動生成。Claude（アシスタント）の応答テキストも材料に含むため、判断ロジックや結論が要約に残る
 - **タグ自動付与** — git root を逆引きしてプロジェクト名・ブランチ名を Obsidian タグ化
 - **ノイズフィルタ** — `ls` `cat` `head` 等の読み取り系コマンドは記録しない（`SKIP_BASH_PATTERN` で調整可）
 

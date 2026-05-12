@@ -43,7 +43,7 @@ if [ -z "$session_file" ] || [ ! -f "$session_file" ]; then
 fi
 
 # --- 会話内容を抽出 ---
-# ユーザーのメッセージ（最初の3件）
+# ユーザーのメッセージ（最初の5件）
 user_messages="$(jq -r '
   select(.type == "human") |
   .message.content |
@@ -51,7 +51,17 @@ user_messages="$(jq -r '
   elif type == "array" then (map(select(.type == "text") | .text) | join(" "))
   else ""
   end
-' "$session_file" 2>/dev/null | grep -v '^$' | head -3)"
+' "$session_file" 2>/dev/null | grep -v '^$' | head -5)"
+
+# Claude（アシスタント）の発言テキスト（短すぎる確認応答や思考はスキップし、最後の8件）
+assistant_messages="$(jq -r '
+  select(.type == "assistant") |
+  .message.content[]? |
+  select(.type == "text") |
+  .text
+' "$session_file" 2>/dev/null \
+  | awk 'length($0) >= 30' \
+  | tail -8)"
 
 # 変更されたファイル
 edited_files="$(jq -r '
@@ -69,21 +79,24 @@ if [ -n "$project_dir" ]; then
 fi
 
 # 内容が空なら記録しない
-if [ -z "$user_messages" ] && [ -z "$edited_files" ]; then
+if [ -z "$user_messages" ] && [ -z "$edited_files" ] && [ -z "$assistant_messages" ]; then
   exit 0
 fi
 
 # --- claude CLI でサマリー生成 ---
-prompt="以下は Claude Code のセッション情報です。日本語で以下の2セクションを書いてください。
+prompt="以下は Claude Code のセッション情報です。ユーザーの依頼、Claude（あなた自身）の応答、変更されたファイルを総合して、日本語で以下の2セクションを書いてください。
 
 ## やったこと
-1〜3個の箇条書きで、このセッションで何を達成したか。
+1〜3個の箇条書きで、このセッションで何を達成したか。Claude の判断や結論（例: 「Vault を一本化することに決定」「PR #2 をマージ」）も具体的に含めること。
 
 ## 次のステップ
 このセッションで触れたが未完了のタスク、明日以降にやるべきこと、ペンディング事項を1〜3個。なければ「特になし」と書く。
 
 === ユーザーの発言（抜粋）===
 ${user_messages:0:3000}
+
+=== Claude の応答（要点抜粋）===
+${assistant_messages:0:4000}
 
 === 変更されたファイル ===
 ${edited_files:-（なし）}
