@@ -10,21 +10,30 @@ if ! command -v jq &>/dev/null; then
 fi
 
 # --- 設定読み込み ---
+# 優先順位: 環境変数 > 設定ファイル > デフォルト
 CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/claude-obsidian-logger/config"
-OBSIDIAN_VAULT_PATH="${OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian Vault}"
-LOG_DIR="${LOG_DIR:-Claude Code}"
+
+# 環境変数を退避（config が上書きしないように）
+_env_vault="${OBSIDIAN_VAULT_PATH:-}"
+_env_logdir="${LOG_DIR:-}"
+_env_skip="${SKIP_BASH_PATTERN:-}"
 
 if [ -f "$CONFIG_FILE" ]; then
   # shellcheck source=/dev/null
   source "$CONFIG_FILE"
 fi
 
+# 環境変数が設定されていればそれを優先
+OBSIDIAN_VAULT_PATH="${_env_vault:-${OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian Vault}}"
+LOG_DIR="${_env_logdir:-${LOG_DIR:-Claude Code}}"
+SKIP_BASH_PATTERN="${_env_skip:-${SKIP_BASH_PATTERN:-^(ls|cat|head|tail|pwd|which|file|stat|find|echo|printf|grep |/bin/ls|wc |type |whoami|env$|env |sleep )}}"
+unset _env_vault _env_logdir _env_skip
+
 # --- stdin から JSON を読み取り ---
 payload="$(cat)"
 
 tool_name="$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null)" || { exit 0; }
 if [ -z "$tool_name" ]; then
-  echo "[claude-obsidian-logger] tool_name not found in payload." >&2
   exit 0
 fi
 
@@ -33,6 +42,77 @@ case "$tool_name" in
   Edit|Write|MultiEdit|Bash) ;;
   *) exit 0 ;;
 esac
+
+# --- payload から共通情報を取得 ---
+payload_cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)"
+
+# --- ツール別の対象情報を抽出 ---
+target=""
+anchor_dir=""
+
+case "$tool_name" in
+  Edit|Write|MultiEdit)
+    raw_path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty' 2>/dev/null)"
+    [ -z "$raw_path" ] && exit 0
+
+    # プロジェクト判定のアンカーは編集対象ファイルのディレクトリ
+    anchor_dir="$(dirname "$raw_path")"
+
+    # 表示用パスは git root からの相対、無理なら basename
+    if git_root="$(git -C "$anchor_dir" rev-parse --show-toplevel 2>/dev/null)"; then
+      target="${raw_path#"$git_root/"}"
+    else
+      target="$(basename "$raw_path")"
+    fi
+    ;;
+  Bash)
+    raw_cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null)"
+    description="$(printf '%s' "$payload" | jq -r '.tool_input.description // empty' 2>/dev/null)"
+    [ -z "$raw_cmd" ] && exit 0
+
+    # ノイズフィルタ（読み取り系コマンドはスキップ）
+    if [[ "$raw_cmd" =~ $SKIP_BASH_PATTERN ]]; then
+      exit 0
+    fi
+
+    # description があれば優先、なければコマンド先頭80字
+    if [ -n "$description" ]; then
+      target="$description"
+    else
+      if [ "${#raw_cmd}" -gt 80 ]; then
+        target="${raw_cmd:0:80}…"
+      else
+        target="$raw_cmd"
+      fi
+    fi
+
+    anchor_dir="$payload_cwd"
+    ;;
+esac
+
+# --- プロジェクト・ブランチ判定 ---
+# 1) anchor_dir の git root を最優先
+# 2) ダメなら payload_cwd の git root
+# 3) どっちも無理なら anchor_dir / payload_cwd の basename
+project_root=""
+if [ -n "$anchor_dir" ] && [ -d "$anchor_dir" ]; then
+  project_root="$(git -C "$anchor_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+if [ -z "$project_root" ] && [ -n "$payload_cwd" ] && [ -d "$payload_cwd" ]; then
+  project_root="$(git -C "$payload_cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+
+if [ -n "$project_root" ]; then
+  project_name="$(basename "$project_root")"
+  branch="$(git -C "$project_root" branch --show-current 2>/dev/null || true)"
+else
+  project_name="$(basename "${anchor_dir:-${payload_cwd:-unknown}}")"
+  branch=""
+fi
+
+project_tag="#${project_name}"
+branch_tag=""
+[ -n "$branch" ] && branch_tag="#branch/${branch}"
 
 # --- 出力先パス ---
 today="$(date +%Y-%m-%d)"
@@ -53,48 +133,21 @@ if [ ! -f "$log_file" ]; then
   printf '# %s\n\n' "$today" > "$log_file"
 fi
 
-# --- ツール別の対象情報を抽出 ---
-project_dir="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-
+# --- ログ行を追記 ---
+# tool ごとに簡潔なアイコンを付ける
 case "$tool_name" in
-  Edit|Write|MultiEdit)
-    raw_path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty' 2>/dev/null)" || { exit 0; }
-    # CLAUDE_PROJECT_DIR からの相対パスを計算（外にある場合は basename）
-    if [[ "$raw_path" == "$project_dir/"* ]]; then
-      target="${raw_path#"$project_dir/"}"
-    else
-      target="$(basename "$raw_path")"
-    fi
-    ;;
-  Bash)
-    raw_cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null)" || { exit 0; }
-    if [ "${#raw_cmd}" -gt 120 ]; then
-      target="${raw_cmd:0:120}..."
-    else
-      target="$raw_cmd"
-    fi
-    ;;
+  Edit)      icon="✏️" ;;
+  Write)     icon="📝" ;;
+  MultiEdit) icon="✂️" ;;
+  Bash)      icon="⚡" ;;
+  *)         icon="·" ;;
 esac
 
-# --- タグ取得 ---
-project_tag="#$(basename "$project_dir")"
+tags="$project_tag"
+[ -n "$branch_tag" ] && tags="$tags $branch_tag"
 
-branch_tag=""
-if git -C "$project_dir" rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
-  branch="$(git -C "$project_dir" branch --show-current 2>/dev/null)"
-  if [ -n "$branch" ]; then
-    branch_tag="#branch/$branch"
-  fi
-fi
-
-# --- ログ行を追記 ---
 {
-  printf '### %s - %s: %s\n' "$time_now" "$tool_name" "$target"
-  echo "- プロジェクト: $project_tag"
-  if [ -n "$branch_tag" ]; then
-    echo "- ブランチ: $branch_tag"
-  fi
-  echo ""
+  printf '%s\n' "- **${time_now}** ${icon} ${tool_name} — ${target} _(${tags})_"
 } >> "$log_file"
 
 exit 0

@@ -3,31 +3,44 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOGGER_SCRIPT="$SCRIPT_DIR/claude-obsidian-log.sh"
 SYMLINK_DIR="$HOME/.local/bin"
-SYMLINK="$SYMLINK_DIR/claude-obsidian-log.sh"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/claude-obsidian-logger"
 CONFIG_FILE="$CONFIG_DIR/config"
 SETTINGS="$HOME/.claude/settings.json"
-MATCHER="Edit|Write|MultiEdit|Bash"
+POST_TOOL_MATCHER="Edit|Write|MultiEdit|Bash"
+
+# スクリプト名 → hook イベント の対応
+declare -a HOOKS=(
+  "claude-obsidian-log.sh:PostToolUse:$POST_TOOL_MATCHER"
+  "claude-obsidian-prompt.sh:UserPromptSubmit:"
+  "claude-obsidian-session-summary.sh:Stop:"
+  "claude-obsidian-daily-rollup.sh:Stop:"
+)
 
 # --- アンインストール ---
 if [ "${1:-}" = "--uninstall" ]; then
   echo "Uninstalling claude-obsidian-logger..."
 
-  if [ -L "$SYMLINK" ]; then
-    rm "$SYMLINK"
-    echo "  Removed symlink: $SYMLINK"
-  fi
+  for entry in "${HOOKS[@]}"; do
+    name="${entry%%:*}"
+    rest="${entry#*:}"
+    event="${rest%%:*}"
+    symlink="$SYMLINK_DIR/$name"
 
-  if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
-    tmp="$(mktemp)"
-    jq --arg m "$MATCHER" \
-      'del(.hooks.PostToolUse[]? | select(.matcher == $m))' \
-      "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-    echo "  Removed hook from: $SETTINGS"
-  fi
+    if [ -L "$symlink" ]; then
+      rm "$symlink"
+      echo "  Removed symlink: $symlink"
+    fi
 
+    if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
+      tmp="$(mktemp)"
+      jq --arg cmd "$symlink" --arg ev "$event" \
+        "del(.hooks[\$ev][]?.hooks[]? | select(.command | test(\$cmd)))" \
+        "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
+    fi
+  done
+
+  echo "  Cleaned hooks from: $SETTINGS"
   echo "Done. Config file retained at: $CONFIG_FILE"
   exit 0
 fi
@@ -48,8 +61,11 @@ mkdir -p "$CONFIG_DIR"
 if [ ! -f "$CONFIG_FILE" ]; then
   cat > "$CONFIG_FILE" <<'EOF'
 # claude-obsidian-logger configuration
+# 環境変数で上書き可能（settings.json の hook command に env を渡すなど）
 OBSIDIAN_VAULT_PATH="$HOME/Documents/Obsidian Vault"
 LOG_DIR="Claude Code"
+# Bash コマンドのうち、以下の正規表現に該当する読み取り系コマンドは記録しない
+SKIP_BASH_PATTERN="^(ls|cat|head|tail|pwd|which|file|stat|find|echo|printf|grep |/bin/ls|wc |type |whoami|env$|env |sleep )"
 EOF
   echo "  Created config: $CONFIG_FILE"
 else
@@ -58,11 +74,22 @@ fi
 
 # シンボリックリンク作成
 mkdir -p "$SYMLINK_DIR"
-if [ -L "$SYMLINK" ]; then
-  rm "$SYMLINK"
-fi
-ln -s "$LOGGER_SCRIPT" "$SYMLINK"
-echo "  Created symlink: $SYMLINK -> $LOGGER_SCRIPT"
+for entry in "${HOOKS[@]}"; do
+  name="${entry%%:*}"
+  target="$SCRIPT_DIR/$name"
+  symlink="$SYMLINK_DIR/$name"
+
+  if [ ! -f "$target" ]; then
+    echo "  Warning: $target not found, skipping symlink"
+    continue
+  fi
+
+  if [ -L "$symlink" ]; then
+    rm "$symlink"
+  fi
+  ln -s "$target" "$symlink"
+  echo "  Created symlink: $symlink"
+done
 
 # PATH 案内
 if ! echo "$PATH" | grep -q "$SYMLINK_DIR"; then
@@ -76,23 +103,45 @@ if [ ! -f "$SETTINGS" ]; then
   echo '{}' > "$SETTINGS"
 fi
 
-already="$(jq --arg m "$MATCHER" \
-  '[.hooks.PostToolUse[]? | select(.matcher == $m)] | length' \
-  "$SETTINGS" 2>/dev/null || echo 0)"
+add_hook() {
+  local event="$1" matcher="$2" cmd="$3"
+  local already
+  already="$(jq --arg ev "$event" --arg cmd "$cmd" \
+    '[.hooks[$ev][]?.hooks[]? | select(.command == $cmd)] | length' \
+    "$SETTINGS" 2>/dev/null || echo 0)"
 
-if [ "$already" -gt 0 ]; then
-  echo "  Hook already registered in: $SETTINGS (skipped)"
-else
+  if [ "$already" -gt 0 ]; then
+    echo "  Hook already registered: $event -> $(basename "$cmd")"
+    return
+  fi
+
+  local tmp
   tmp="$(mktemp)"
-  jq --arg m "$MATCHER" --arg cmd "$SYMLINK" '
-    .hooks.PostToolUse = (
-      (.hooks.PostToolUse // []) +
+  jq --arg ev "$event" --arg m "$matcher" --arg cmd "$cmd" '
+    .hooks //= {} |
+    .hooks[$ev] = (
+      (.hooks[$ev] // []) +
       [{"matcher": $m, "hooks": [{"type": "command", "command": $cmd}]}]
     )
   ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-  echo "  Added hook to: $SETTINGS"
-fi
+  echo "  Added hook: $event -> $(basename "$cmd")"
+}
+
+for entry in "${HOOKS[@]}"; do
+  name="${entry%%:*}"
+  rest="${entry#*:}"
+  event="${rest%%:*}"
+  matcher="${rest#*:}"
+  symlink="$SYMLINK_DIR/$name"
+
+  [ -L "$symlink" ] || continue
+  add_hook "$event" "$matcher" "$symlink"
+done
 
 echo ""
 echo "Done! claude-obsidian-logger is installed."
-echo "Edit config to set your vault path: $CONFIG_FILE"
+echo "  Config: $CONFIG_FILE"
+echo "  Hooks registered: PostToolUse / UserPromptSubmit / Stop x2"
+echo ""
+echo "Note: Session summaries and daily rollups use the \`claude\` CLI."
+echo "      Ensure you are logged in (\`claude\` once interactively) for them to work."
