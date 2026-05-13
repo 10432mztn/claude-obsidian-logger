@@ -20,6 +20,7 @@ declare -a HOOKS=(
 # 同梱する slash command（commands/ 配下のファイル名を列挙）
 declare -a COMMANDS=(
   "daily-rollup.md"
+  "sync-memory.md"
 )
 
 # --- アンインストール ---

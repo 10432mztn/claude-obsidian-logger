@@ -8,7 +8,8 @@ Claude Code の [hook 機能](https://docs.anthropic.com/en/docs/claude-code/hoo
 - **トークン消費ゼロ** — hook はモデル外で動作。LLM を呼び出さない
 - **タグ自動付与** — git root を逆引きしてプロジェクト名・ブランチ名を Obsidian タグ化
 - **ノイズフィルタ** — `ls` `cat` `head` 等の読み取り系コマンドは記録しない（`SKIP_BASH_PATTERN` で調整可）
-- **要約は対話セッションで** — Stop hook は機械統計のみ記録し、「📋 今日の総括 / 🎯 明日やること」は同梱 slash command `/daily-rollup` で対話 Claude に生成させる（hook 内で `claude -p` を呼ぶと認証パスが分離して失敗するため）。`install.sh` が `commands/daily-rollup.md` を `~/.claude/commands/` に symlink するので、インストール後すぐ `/daily-rollup` が使える
+- **要約は対話セッションで** — Stop hook は機械統計のみ記録し、「📋 今日の総括 / 🎯 明日やること」は同梱 slash command `/daily-rollup` で対話 Claude に生成させる（hook 内で `claude -p` を呼ぶと認証パスが分離して失敗するため）。`install.sh` が `commands/*.md` を `~/.claude/commands/` に symlink するので、インストール後すぐ `/daily-rollup` が使える
+- **学びを memory に昇格** — `/sync-memory` でデイリーロールアップから「決定事項・学び・参照先」を抽出してユーザー承認のもと `~/.claude/projects/.../memory/` に新規 memory ファイル＋ index 更新。`--last-week` 引数で週次まとめにも対応
 
 ## 出力例
 
