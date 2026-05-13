@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SYMLINK_DIR="$HOME/.local/bin"
+COMMANDS_DIR="$HOME/.claude/commands"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/claude-obsidian-logger"
 CONFIG_FILE="$CONFIG_DIR/config"
 SETTINGS="$HOME/.claude/settings.json"
@@ -14,6 +15,11 @@ declare -a HOOKS=(
   "claude-obsidian-log.sh:PostToolUse:$POST_TOOL_MATCHER"
   "claude-obsidian-prompt.sh:UserPromptSubmit:"
   "claude-obsidian-session-summary.sh:Stop:"
+)
+
+# 同梱する slash command（commands/ 配下のファイル名を列挙）
+declare -a COMMANDS=(
+  "daily-rollup.md"
 )
 
 # --- アンインストール ---
@@ -36,6 +42,14 @@ if [ "${1:-}" = "--uninstall" ]; then
       jq --arg cmd "$symlink" --arg ev "$event" \
         "del(.hooks[\$ev][]?.hooks[]? | select(.command | test(\$cmd)))" \
         "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
+    fi
+  done
+
+  for cmd_name in "${COMMANDS[@]}"; do
+    cmd_link="$COMMANDS_DIR/$cmd_name"
+    if [ -L "$cmd_link" ]; then
+      rm "$cmd_link"
+      echo "  Removed command symlink: $cmd_link"
     fi
   done
 
@@ -137,11 +151,34 @@ for entry in "${HOOKS[@]}"; do
   add_hook "$event" "$matcher" "$symlink"
 done
 
+# slash command を ~/.claude/commands/ に symlink
+mkdir -p "$COMMANDS_DIR"
+for cmd_name in "${COMMANDS[@]}"; do
+  cmd_src="$SCRIPT_DIR/commands/$cmd_name"
+  cmd_link="$COMMANDS_DIR/$cmd_name"
+
+  if [ ! -f "$cmd_src" ]; then
+    echo "  Warning: $cmd_src not found, skipping slash command"
+    continue
+  fi
+
+  if [ -L "$cmd_link" ]; then
+    rm "$cmd_link"
+  elif [ -f "$cmd_link" ]; then
+    backup="$cmd_link.bak.$(date +%s)"
+    mv "$cmd_link" "$backup"
+    echo "  Existing file backed up: $backup"
+  fi
+  ln -s "$cmd_src" "$cmd_link"
+  echo "  Installed slash command: /${cmd_name%.md}"
+done
+
 echo ""
 echo "Done! claude-obsidian-logger is installed."
 echo "  Config: $CONFIG_FILE"
 echo "  Hooks registered: PostToolUse / UserPromptSubmit / Stop"
+echo "  Slash commands installed: $(printf '/%s ' "${COMMANDS[@]%.md}")"
 echo ""
-echo "Daily rollup (📋 今日の総括 / 🎯 明日やること) is NOT generated automatically."
+echo "Daily rollup is NOT generated automatically (LLM 呼び出しを hook から外したため)."
 echo "Run the slash command \`/daily-rollup\` from an interactive Claude Code session"
-echo "to generate or update the rollup for today (or pass a YYYY-MM-DD date)."
+echo "to generate or update today's rollup (or pass a YYYY-MM-DD date as argument)."
