@@ -39,9 +39,12 @@ if [ "${1:-}" = "--uninstall" ]; then
 
     if [ -f "$SETTINGS" ] && command -v jq &>/dev/null; then
       tmp="$(mktemp)"
-      jq --arg cmd "$symlink" --arg ev "$event" \
-        "del(.hooks[\$ev][]?.hooks[]? | select(.command | test(\$cmd)))" \
-        "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
+      # basename を含む command を持つ hook を削除（env-prefix / 別パス展開でも検出できる）
+      jq --arg name "$name" --arg ev "$event" '
+        .hooks[$ev] = ([.hooks[$ev][]? |
+          .hooks = [.hooks[]? | select((.command | type == "string" and contains($name)) | not)]
+        ] | map(select(.hooks | length > 0)))
+      ' "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
     fi
   done
 
@@ -118,13 +121,18 @@ fi
 
 add_hook() {
   local event="$1" matcher="$2" cmd="$3"
+  local script_name
+  script_name="$(basename "$cmd")"
   local already
-  already="$(jq --arg ev "$event" --arg cmd "$cmd" \
-    '[.hooks[$ev][]?.hooks[]? | select(.command == $cmd)] | length' \
+  # スクリプト名（basename）が含まれていれば登録済みとみなす。
+  # 既存 hook が env-prefix 付き（例: `OBSIDIAN_VAULT_PATH=... /path/to/script.sh`）でも
+  # シンボリックリンク経由（symlink path != source path）でも検出できるよう substring match を使う。
+  already="$(jq --arg ev "$event" --arg name "$script_name" \
+    '[.hooks[$ev][]?.hooks[]? | select(.command | type == "string" and contains($name))] | length' \
     "$SETTINGS" 2>/dev/null || echo 0)"
 
   if [ "$already" -gt 0 ]; then
-    echo "  Hook already registered: $event -> $(basename "$cmd")"
+    echo "  Hook already registered: $event -> $script_name"
     return
   fi
 
