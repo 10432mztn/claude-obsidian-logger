@@ -32,6 +32,7 @@ mkdir -p "$FAKE_HOME/.claude/projects/-tmp-proj" "$VAULT"
 cat > "$FAKE_HOME/.claude/projects/-tmp-proj/$SESSION_ID.jsonl" <<'JSONL'
 {"type":"user","message":{"role":"user","content":"ログ集計の仕組みを直してほしい"}}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/tmp/proj/a.sh"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"edit-1","content":"ファイルの編集が完了しました"}]}}
 {"type":"user","message":{"role":"user","content":[{"type":"text","text":"テストも一緒に足しておいてください"}]}}
 JSONL
 
@@ -41,7 +42,7 @@ printf '{"session_id":"%s","cwd":"/tmp/proj"}' "$SESSION_ID" |
 LOG_FILE="$(find "$VAULT" -name '*.md' | head -1)"
 
 echo "=== Test: transcript の type=user を発言として数える ==="
-assert_contains "$LOG_FILE" "ユーザー発言: 2 件" "user_count counts type=user lines"
+assert_contains "$LOG_FILE" "ユーザー発言: 2 件" "ツールの実行結果を発言数に含めない"
 
 echo "=== Test: 主な依頼に user の発言が載る ==="
 assert_contains "$LOG_FILE" "ログ集計の仕組みを直してほしい" "string content is extracted"
