@@ -37,7 +37,7 @@ session_file="$(find "$HOME/.claude/projects" -name "${session_id}.jsonl" 2>/dev
 [ -z "$session_file" ] || [ ! -f "$session_file" ] && exit 0
 
 # --- 統計収集 ---
-user_count="$(jq -r 'select(.type == "human") | .' "$session_file" 2>/dev/null | jq -s 'length' 2>/dev/null || echo 0)"
+user_count="$(jq -r 'select(.type == "user") | .' "$session_file" 2>/dev/null | jq -s 'length' 2>/dev/null || echo 0)"
 edited_files="$(jq -r '
   select(.type == "assistant") |
   .message.content[]? |
@@ -54,7 +54,7 @@ bash_count="$(jq -r '
 
 # --- ユーザーの主要発言を3件抽出（短すぎる返答は除外）---
 key_user_msgs="$(jq -r '
-  select(.type == "human") |
+  select(.type == "user") |
   .message.content |
   if type == "string" then .
   elif type == "array" then (map(select(.type == "text") | .text) | join(" "))
